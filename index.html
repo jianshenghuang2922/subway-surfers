@@ -132,18 +132,36 @@
     position: absolute; left: 16px; top: 14px;
     display: flex; align-items: center; gap: 9px;
     padding: 6px 16px 6px 6px; border-radius: 30px;
+    border: none; cursor: pointer; font-family: inherit; text-align: left;
     background: linear-gradient(180deg, rgba(56,14,48,.94), rgba(26,5,22,.96));
     box-shadow: inset 0 0 0 2px rgba(255,190,90,.55), 0 4px 0 rgba(0,0,0,.35);
+    transition: transform .1s ease, box-shadow .1s ease;
   }
+  .menu-profile:active {
+    transform: translateY(2px);
+    box-shadow: inset 0 0 0 2px rgba(255,190,90,.55), 0 2px 0 rgba(0,0,0,.35);
+  }
+  .menu-profile.guest .plevel { color: #ffb9a8; }
   .menu-profile .avatar {
     width: 42px; height: 42px; border-radius: 50%; overflow: hidden;
+    position: relative;
     background: linear-gradient(180deg, #6a3a8f, #3a1a56);
     box-shadow: inset 0 0 0 2.5px rgba(255,210,90,.9);
-    display: flex; align-items: flex-end; justify-content: center;
   }
-  .menu-profile .avatar .ch-fig { transform: scale(.66) translateY(6px); transform-origin: bottom center; }
-  .pname { font-size: 15px; color: #ffe9a8; letter-spacing: .5px; }
-  .plevel { font-size: 11px; color: #c9a0be; margin-top: 1px; }
+  .menu-profile .avatar .ch-fig {
+    position: absolute; left: 50%; bottom: 0; margin: 0;
+    transform: translateX(-50%) scale(.62); transform-origin: bottom center;
+  }
+  .pname {
+    font-size: 15px; color: #ffe9a8; letter-spacing: .5px;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .plv { font-style: normal; font-size: 10.5px; color: #ffd23f; opacity: .9; letter-spacing: 0; }
+  .plv b { font-weight: 400; }
+  .plevel {
+    font-size: 11px; color: #c9a0be; margin-top: 1px;
+    max-width: 148px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .plevel b { color: #ffd23f; font-weight: 400; }
 
   /* 左右功能列 */
@@ -323,6 +341,58 @@
     background: linear-gradient(180deg, #7ee08a, #2fa04a); color: #06330f;
     box-shadow: inset 0 0 0 2px rgba(255,255,255,.45), 0 3px 0 #1a6b2c;
   }
+
+  /* 账户面板：邮箱登录 / 注册 */
+  .auth-tabs { display: flex; gap: 8px; margin: 2px 0 14px; }
+  .auth-tab {
+    flex: 1; border: none; cursor: pointer; font-family: inherit;
+    padding: 9px 0 10px; border-radius: 14px; font-size: 14.5px; letter-spacing: 1px;
+    color: #d8b6d0;
+    background: linear-gradient(180deg, rgba(74,22,66,.72), rgba(32,8,28,.88));
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.10);
+    transition: color .15s ease, background .15s ease;
+  }
+  .auth-tab.on {
+    color: #4a2a00;
+    background: linear-gradient(180deg, #ffe066, #f0a81e);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.5), 0 3px 0 #a86a00;
+  }
+  .auth-field { display: block; text-align: left; margin-bottom: 11px; }
+  .auth-field > span {
+    display: block; font-size: 12px; color: #c9a0be;
+    margin: 0 0 5px 6px; letter-spacing: .5px;
+  }
+  .auth-field input {
+    width: 100%; box-sizing: border-box; font-family: inherit; font-size: 15px;
+    padding: 11px 14px; border-radius: 14px; color: #ffe9a8;
+    background: rgba(16,3,14,.72);
+    border: 2px solid rgba(255,190,90,.30); outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .auth-field input::placeholder { color: #7d5c74; }
+  .auth-field input:focus {
+    border-color: rgba(255,190,90,.85);
+    box-shadow: 0 0 0 3px rgba(255,190,90,.16);
+  }
+  .auth-err { min-height: 17px; margin: 2px 0 8px; font-size: 12.5px; color: #ff9a9a; letter-spacing: .3px; }
+  .auth-err:empty { min-height: 0; margin: 0 0 5px; }
+  .auth-note { margin-top: 12px; font-size: 11px; color: #8f6b86; letter-spacing: .3px; }
+  #cardLogin .btn { margin-top: 7px; }
+  .auth-user-top { display: flex; align-items: center; gap: 12px; text-align: left; margin-bottom: 13px; }
+  .auth-avatar {
+    width: 56px; height: 56px; border-radius: 50%; overflow: hidden; flex: none;
+    position: relative;
+    background: linear-gradient(180deg, #6a3a8f, #3a1a56);
+    box-shadow: inset 0 0 0 2.5px rgba(255,210,90,.9);
+  }
+  .auth-avatar .ch-fig {
+    position: absolute; left: 50%; bottom: 1px; margin: 0;
+    transform: translateX(-50%) scale(.74); transform-origin: bottom center;
+  }
+  .auth-mail { font-size: 15px; color: #ffe9a8; word-break: break-all; }
+  .auth-stat { font-size: 12px; color: #c9a0be; margin-top: 5px; }
+  .auth-stat b { color: #ffd23f; font-weight: 400; }
+  .auth-hint { font-size: 11.5px; color: #a883a0; margin-bottom: 13px; letter-spacing: .3px; }
 
   /* 一次性提示条（第一次被追捕者逮住时弹出来） */
   #toast {
@@ -522,14 +592,14 @@
       <div class="res"><i class="ri ri-key"></i><b id="menuKey">0</b><span class="plus">+</span></div>
     </div>
 
-    <!-- 左上：玩家信息 -->
-    <div class="menu-profile">
+    <!-- 左上：玩家信息（点开账户面板） -->
+    <button class="menu-profile" id="btnProfile">
       <div class="avatar" id="menuAvatar"></div>
       <div class="pinfo">
-        <div class="pname" id="menuName">杰克</div>
-        <div class="plevel">等级 <b id="menuLevel">1</b></div>
+        <div class="pname"><span id="menuName">杰克</span><em class="plv">Lv.<b id="menuLevel">1</b></em></div>
+        <div class="plevel" id="menuSub">游客 · 点此登录</div>
       </div>
-    </div>
+    </button>
 
     <!-- 左侧功能 -->
     <div class="menu-col left">
@@ -597,6 +667,51 @@
     <div class="shop-wallet">金币 <b id="shopWallet">0</b></div>
     <div class="shop-list" id="shopList"></div>
     <button class="btn blue" id="btnShopBack">返回</button>
+  </div>
+
+  <!-- 账户：邮箱登录 / 注册 -->
+  <div class="card hidden" id="cardLogin">
+    <div class="panel-title">账户</div>
+    <div class="panel-sub" id="authSub">登录后金币、角色、最高分都跟着账号走</div>
+
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab on" data-tab="login">登录</button>
+      <button class="auth-tab" data-tab="reg">注册</button>
+    </div>
+
+    <div class="auth-form" id="authForm">
+      <label class="auth-field">
+        <span>邮箱</span>
+        <input id="authEmail" type="email" inputmode="email" autocomplete="username"
+               placeholder="you@example.com" spellcheck="false" />
+      </label>
+      <label class="auth-field">
+        <span>密码</span>
+        <input id="authPass" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+      </label>
+      <label class="auth-field hidden" id="authPass2Row">
+        <span>确认密码</span>
+        <input id="authPass2" type="password" autocomplete="new-password" placeholder="再输一次" />
+      </label>
+      <div class="auth-err" id="authErr"></div>
+      <button class="btn blue" id="authSubmit">登录</button>
+      <button class="btn ghost" id="authBack">返回</button>
+    </div>
+
+    <div class="auth-user hidden" id="authUser">
+      <div class="auth-user-top">
+        <div class="auth-avatar" id="authAvatar"></div>
+        <div>
+          <div class="auth-mail" id="authMail">—</div>
+          <div class="auth-stat" id="authStat">—</div>
+        </div>
+      </div>
+      <div class="auth-hint">数据存在这台设备的浏览器里，换设备不同步</div>
+      <button class="btn ghost" id="btnLogout">退出登录</button>
+      <button class="btn blue" id="btnAuthBack">返回</button>
+    </div>
+
+    <div class="auth-note">密码只在本机校验，不上传，也找不回来</div>
   </div>
 
   <div class="card hidden" id="cardPause">

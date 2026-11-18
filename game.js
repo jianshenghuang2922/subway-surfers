@@ -1794,8 +1794,8 @@
   let noSpawn = false;   // 调试用：关掉自动生成
   let godMode = /[?&]god=1/.test(location.search);   // 调试用：撞不死，方便统计生成节奏
   const charCam = /[?&]charcam=1/.test(location.search);   // 调试用：角色特写机位
+  // 最高分跟着账号走，由 loadSave() 从当前档里读出来
   let best = 0;
-  try { best = parseInt(localStorage.getItem('subway_best') || '0', 10) || 0; } catch (e) { best = 0; }
 
   /* ---------------- UI ---------------- */
   const elScore = document.getElementById('score');
@@ -1817,17 +1817,19 @@
   const cardPause = document.getElementById('cardPause');
   const cardChars = document.getElementById('cardChars');
   const cardShop = document.getElementById('cardShop');
+  const cardLogin = document.getElementById('cardLogin');
   const oScore = document.getElementById('oScore');
   const oDist = document.getElementById('oDist');
   const oCoins = document.getElementById('oCoins');
   const oBest = document.getElementById('oBest');
 
   function showCard(which) {
-    [cardStart, cardOver, cardPause, cardChars, cardShop].forEach(c => c.classList.add('hidden'));
+    [cardStart, cardOver, cardPause, cardChars, cardShop, cardLogin].forEach(c => c.classList.add('hidden'));
     // 主菜单是全屏布局，暗角要淡一点，不然两侧按钮糊成一片
     overlay.classList.toggle('menu-mode', which === cardStart);
-    // 主菜单/角色/商店有自己的资源显示，游戏里的分数/金币 HUD 收起来
-    if (elHud) elHud.classList.toggle('off', which === cardStart || which === cardChars || which === cardShop);
+    // 主菜单/角色/商店/账户有自己的资源显示，游戏里的分数/金币 HUD 收起来
+    if (elHud) elHud.classList.toggle('off',
+      which === cardStart || which === cardChars || which === cardShop || which === cardLogin);
     if (which) {
       overlay.classList.remove('hide');
       which.classList.remove('hidden');
@@ -2233,7 +2235,7 @@
     guardRoot.visible = true;
     if (score > best) {
       best = score;
-      try { localStorage.setItem('subway_best', String(best)); } catch (e) {}
+      saveSave();          // 最高分跟着账号档一起落盘
     }
   }
 
@@ -2266,6 +2268,9 @@
 
   window.addEventListener('keydown', e => {
     const k = e.key;
+    // 在邮箱/密码输入框里打字时，别把方向键、空格、回车当成游戏操作
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown' || k === ' ' || k === 'Spacebar') e.preventDefault();
 
     if (state === 'ready' && (k === ' ' || k === 'Enter')) {
@@ -2350,33 +2355,93 @@
       pack: 0xc02a2a, pack2: 0x6a1414, glove: 0xc02a2a }
   ];
 
-  const SAVE_KEY = { wallet: 'subway_wallet', owned: 'subway_owned', char: 'subway_char' };
+  /* ---------------- 账户与存档 ---------------- */
+  // 本地账户：邮箱 + 密码，全部存在这台设备的 localStorage 里。
+  // 密码只做本地校验（加盐多轮哈希），不上传、不同步，也没法找回。
+  const ACC_KEY = 'subway_accounts';
+  const SESS_KEY = 'subway_session';
+  const SAVE_PREFIX = 'subway_save_';
+  const GUEST_ID = 'guest';
+
+  let accounts = [];          // [{ id, email, salt, hash, at }]
+  let profileId = GUEST_ID;   // 'guest' 或 'acc_xxx'
   let wallet = 0;
   let ownedChars = ['jake'];
   let curChar = 'jake';
 
-  function loadSave() {
+  const saveKeyFor = pid => SAVE_PREFIX + pid;
+
+  function loadAccounts() {
     try {
-      const w = localStorage.getItem(SAVE_KEY.wallet);
-      // 第一次玩先给一点启动资金，不然商店点开全是买不起的
-      wallet = w === null ? 800 : (parseInt(w, 10) || 0);
-      const o = JSON.parse(localStorage.getItem(SAVE_KEY.owned) || '["jake"]');
-      if (Array.isArray(o) && o.length) ownedChars = o;
-      const c = localStorage.getItem(SAVE_KEY.char);
-      if (c) curChar = c;
-    } catch (e) {
-      wallet = 800; ownedChars = ['jake']; curChar = 'jake';
+      const a = JSON.parse(localStorage.getItem(ACC_KEY) || '[]');
+      accounts = Array.isArray(a) ? a.filter(x => x && x.id && x.email) : [];
+    } catch (e) { accounts = []; }
+  }
+  function persistAccounts() {
+    try { localStorage.setItem(ACC_KEY, JSON.stringify(accounts)); } catch (e) {}
+  }
+  function currentAccount() {
+    return accounts.find(a => a.id === profileId) || null;
+  }
+
+  // 加盐 + 500 轮混合，挡住"打开控制台一眼看到明文密码"。
+  // 本地账户不是真安全，别拿它当密码库用
+  function hashPass(pass, salt) {
+    let h1 = 0x811c9dc5, h2 = 0x1000193;
+    let s = salt + '|' + pass + '|subway';
+    for (let r = 0; r < 500; r++) {
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i) + r;
+        h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+        h2 = (h2 + Math.imul(c, 2654435761)) >>> 0;
+        h2 = (h2 ^ (h2 >>> 13)) >>> 0;
+      }
+      s = h1.toString(16) + h2.toString(16);
     }
+    return ('00000000' + h1.toString(16)).slice(-8) + ('00000000' + h2.toString(16)).slice(-8);
+  }
+
+  function loadSave() {
+    let d = null;
+    try {
+      const raw = localStorage.getItem(saveKeyFor(profileId));
+      if (raw) d = JSON.parse(raw);
+      else if (profileId === GUEST_ID) {
+        // 老版本没分档：把旧的三个键迁进游客档，进度不丢
+        const w = localStorage.getItem('subway_wallet');
+        if (w !== null) {
+          d = {
+            wallet: parseInt(w, 10) || 0,
+            owned: JSON.parse(localStorage.getItem('subway_owned') || '["jake"]'),
+            char: localStorage.getItem('subway_char') || 'jake',
+            best: parseInt(localStorage.getItem('subway_best') || '0', 10) || 0
+          };
+        }
+      }
+    } catch (e) { d = null; }
+
+    // 新档第一次进送 800 启动资金，不然商店点开全是买不起的
+    wallet = d && typeof d.wallet === 'number' ? d.wallet : 800;
+    ownedChars = (d && Array.isArray(d.owned) && d.owned.length) ? d.owned.slice() : ['jake'];
+    curChar = (d && d.char) || 'jake';
+    best = d && typeof d.best === 'number' ? d.best : 0;
+
     if (ownedChars.indexOf('jake') < 0) ownedChars.unshift('jake');
     if (ownedChars.indexOf(curChar) < 0) curChar = 'jake';
+    saveSave();
   }
 
   function saveSave() {
     try {
-      localStorage.setItem(SAVE_KEY.wallet, String(wallet));
-      localStorage.setItem(SAVE_KEY.owned, JSON.stringify(ownedChars));
-      localStorage.setItem(SAVE_KEY.char, curChar);
+      localStorage.setItem(saveKeyFor(profileId), JSON.stringify({
+        wallet: wallet, owned: ownedChars, char: curChar, best: best, at: Date.now()
+      }));
     } catch (e) {}
+  }
+
+  function findAccount(email) {
+    const e = String(email || '').trim().toLowerCase();
+    return accounts.find(a => a.email === e) || null;
   }
 
   function applyChar(id) {
@@ -2408,6 +2473,22 @@
   const elMenuAvatar = document.getElementById('menuAvatar');
   const elMenuName = document.getElementById('menuName');
   const elMenuLevel = document.getElementById('menuLevel');
+  const elMenuSub = document.getElementById('menuSub');
+  const elBtnProfile = document.getElementById('btnProfile');
+  // 账户面板
+  const elAuthTabs = document.getElementById('authTabs');
+  const elAuthForm = document.getElementById('authForm');
+  const elAuthUser = document.getElementById('authUser');
+  const elAuthEmail = document.getElementById('authEmail');
+  const elAuthPass = document.getElementById('authPass');
+  const elAuthPass2 = document.getElementById('authPass2');
+  const elAuthPass2Row = document.getElementById('authPass2Row');
+  const elAuthErr = document.getElementById('authErr');
+  const elAuthSubmit = document.getElementById('authSubmit');
+  const elAuthSub = document.getElementById('authSub');
+  const elAuthMail = document.getElementById('authMail');
+  const elAuthStat = document.getElementById('authStat');
+  const elAuthAvatar = document.getElementById('authAvatar');
 
   const fmtNum = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const hex6 = n => '#' + ('000000' + n.toString(16)).slice(-6);
@@ -2437,6 +2518,119 @@
     if (elMenuAvatar) elMenuAvatar.innerHTML = figHTML(c);
     if (elMenuName) elMenuName.textContent = c.name;
     if (elMenuLevel) elMenuLevel.textContent = menuLevel();
+    const acc = currentAccount();
+    if (elMenuSub) elMenuSub.textContent = acc ? acc.email : '游客 · 点此登录';
+    if (elBtnProfile) elBtnProfile.classList.toggle('guest', !acc);
+  }
+
+  /* ---------------- 账户面板 ---------------- */
+  let authMode = 'login';   // 'login' | 'reg'
+
+  function authErr(msg) {
+    if (elAuthErr) elAuthErr.textContent = msg || '';
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    if (elAuthTabs) {
+      [].forEach.call(elAuthTabs.querySelectorAll('.auth-tab'), b => {
+        b.classList.toggle('on', b.getAttribute('data-tab') === mode);
+      });
+    }
+    if (elAuthPass2Row) elAuthPass2Row.classList.toggle('hidden', mode !== 'reg');
+    if (elAuthSubmit) elAuthSubmit.textContent = mode === 'reg' ? '注册并登录' : '登录';
+    if (elAuthSub) elAuthSub.textContent = mode === 'reg'
+      ? '注册一个账号，当前进度会一起带过去'
+      : '登录后金币、角色、最高分都跟着账号走';
+    authErr('');
+  }
+
+  function renderAuth() {
+    const acc = currentAccount();
+    if (!acc) {
+      if (elAuthForm) elAuthForm.classList.remove('hidden');
+      if (elAuthUser) elAuthUser.classList.add('hidden');
+      if (elAuthTabs) elAuthTabs.classList.remove('hidden');
+      setAuthMode(authMode);
+      return;
+    }
+    if (elAuthForm) elAuthForm.classList.add('hidden');
+    if (elAuthUser) elAuthUser.classList.remove('hidden');
+    if (elAuthTabs) elAuthTabs.classList.add('hidden');
+    if (elAuthSub) elAuthSub.textContent = '已登录，数据跟着这个账号走';
+    if (elAuthMail) elAuthMail.textContent = acc.email;
+    const c = CHARS.find(x => x.id === curChar) || CHARS[0];
+    if (elAuthAvatar) elAuthAvatar.innerHTML = figHTML(c);
+    if (elAuthStat) elAuthStat.innerHTML =
+      '金币 <b>' + fmtNum(wallet) + '</b> · 角色 <b>' + ownedChars.length + '</b>/' +
+      CHARS.length + ' · 最高分 <b>' + fmtNum(best) + '</b>';
+  }
+
+  function openAuth() {
+    renderAuth();
+    showCard(cardLogin);
+  }
+
+  function loginAs(acc) {
+    saveSave();                     // 当前档先落盘，别丢
+    profileId = acc.id;
+    loadSave();
+    applyChar(curChar);
+    renderChars();
+    renderShop();
+    renderMenu();
+    try { localStorage.setItem(SESS_KEY, acc.id); } catch (e) {}
+    renderAuth();
+    showToast('已登录 ' + acc.email);
+    showCard(cardStart);
+  }
+
+  function doLogout() {
+    saveSave();
+    profileId = GUEST_ID;
+    loadSave();
+    applyChar(curChar);
+    renderChars();
+    renderShop();
+    renderMenu();
+    try { localStorage.removeItem(SESS_KEY); } catch (e) {}
+    renderAuth();
+    showToast('已退出登录');
+    showCard(cardStart);
+  }
+
+  function doRegister(email, pass, pass2) {
+    const em = String(email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return '邮箱格式不对';
+    if (!pass || pass.length < 6) return '密码至少 6 位';
+    if (pass !== pass2) return '两次输入的密码不一样';
+    if (findAccount(em)) return '这个邮箱已经注册过了，直接登录';
+
+    const salt = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    const acc = {
+      id: 'acc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      email: em, salt: salt, hash: hashPass(pass, salt), at: Date.now()
+    };
+    accounts.push(acc);
+    persistAccounts();
+
+    // 把当前（游客）进度带进新账号，注册完不用从头攒钱
+    try {
+      localStorage.setItem(saveKeyFor(acc.id), JSON.stringify({
+        wallet: wallet, owned: ownedChars.slice(), char: curChar, best: best, at: Date.now()
+      }));
+    } catch (e) {}
+
+    loginAs(acc);
+    return null;
+  }
+
+  function doLogin(email, pass) {
+    const acc = findAccount(email);
+    if (!acc) return '没有这个邮箱，先注册一个';
+    if (acc.hash !== hashPass(pass, acc.salt)) return '密码不对';
+    loginAs(acc);
+    return null;
   }
 
   function renderChars() {
@@ -2514,6 +2708,37 @@
     renderShop(); showCard(cardStart);
   });
 
+  /* ---------------- 账户面板事件 ---------------- */
+  if (elBtnProfile) elBtnProfile.addEventListener('click', openAuth);
+  document.getElementById('authBack').addEventListener('click', () => showCard(cardStart));
+  document.getElementById('btnAuthBack').addEventListener('click', () => showCard(cardStart));
+  document.getElementById('btnLogout').addEventListener('click', doLogout);
+  if (elAuthTabs) {
+    elAuthTabs.addEventListener('click', e => {
+      const b = e.target.closest('.auth-tab');
+      if (b) setAuthMode(b.getAttribute('data-tab'));
+    });
+  }
+  if (elAuthSubmit) {
+    elAuthSubmit.addEventListener('click', () => {
+      const err = authMode === 'reg'
+        ? doRegister(elAuthEmail.value, elAuthPass.value, elAuthPass2.value)
+        : doLogin(elAuthEmail.value, elAuthPass.value);
+      if (err) authErr(err);
+    });
+  }
+  // 输入框里回车直接提交，别让全局键盘事件把它吃掉
+  [elAuthEmail, elAuthPass, elAuthPass2].forEach(inp => {
+    if (!inp) return;
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (elAuthSubmit) elAuthSubmit.click();
+      }
+    });
+  });
+
   // 侧栏里还没做的功能：点一下给个提示，别让人以为是坏了
   document.querySelectorAll('.side-btn.soon').forEach(b => {
     b.addEventListener('click', () => {
@@ -2521,13 +2746,20 @@
     });
   });
 
+  // 账户：先读账号表，再看有没有登录过（刷新页面保持登录）
+  loadAccounts();
+  try {
+    const sid = localStorage.getItem(SESS_KEY);
+    if (sid && accounts.find(a => a.id === sid)) profileId = sid;
+  } catch (e) {}
+
   loadSave();
   applyChar(curChar);
   renderChars();
   renderShop();
   renderMenu();
 
-  // 调试：?panel=chars / ?panel=shop 直接打开对应面板，方便截图。
+  // 调试：?panel=chars|shop|login 直接打开对应面板，方便截图。
   // 真正的 showCard 放在文件末尾的初始化里（那里会覆盖这里），所以只记下要开哪张
   const _pn = /[?&]panel=(\w+)/.exec(location.search);
   const bootPanel = _pn ? _pn[1] : null;
@@ -3124,6 +3356,10 @@
   resetGame();
   if (bootPanel === 'chars') showCard(cardChars);
   else if (bootPanel === 'shop') showCard(cardShop);
+  else if (bootPanel === 'login') {
+    if (/[?&]tab=reg/.test(location.search)) authMode = 'reg';   // 截图用：直接停在注册页
+    openAuth();
+  }
   else showCard(cardStart);   // 主菜单：套全屏布局、收起游戏 HUD
   requestAnimationFrame(loop);
 
@@ -3150,14 +3386,60 @@
       ' coin=' + (elMenuCoin ? elMenuCoin.textContent : '-');
   }
 
-  // 调试：?ui=reset 清掉存档（金币/已解锁角色/当前角色/最高分），回到第一次玩的状态
+  // 调试：?ui=reset 清掉全部本地存档与账号，回到第一次玩的状态
   if (/[?&]ui=reset/.test(location.search)) {
     try {
-      Object.keys(SAVE_KEY).forEach(k => localStorage.removeItem(SAVE_KEY[k]));
-      localStorage.removeItem('subway_best');
+      Object.keys(localStorage).forEach(k => {
+        if (k.indexOf('subway_') === 0) localStorage.removeItem(k);
+      });
+      accounts = []; profileId = GUEST_ID;
       wallet = 800; ownedChars = ['jake']; curChar = 'jake'; best = 0;
-      applyChar(curChar); renderChars(); renderShop(); renderMenu();
+      applyChar(curChar); renderChars(); renderShop(); renderMenu(); renderAuth();
     } catch (e) {}
+  }
+
+  // 调试：?ui=acc 跑一遍账户闭环（注册 → 加钱 → 退出 → 错密码 → 正确登录 → 重复注册），
+  // 验证每个账号的存档是真的隔离
+  if (/[?&]ui=acc/.test(location.search)) {
+    const out = [];
+    out.push('guest=' + wallet);
+
+    const e1 = doRegister('test@a.com', '123456', '123456');
+    out.push('reg=' + (e1 || 'ok') + ' wallet=' + wallet);
+
+    wallet += 500; saveSave();
+    out.push('add500=' + wallet);
+
+    doLogout();
+    out.push('logout wallet=' + wallet + ' pid=' + profileId);
+
+    out.push('badpass=' + (doLogin('test@a.com', 'wrongpass') || 'ok'));
+
+    const e3 = doLogin('test@a.com', '123456');
+    out.push('login=' + (e3 || 'ok') + ' wallet=' + wallet);
+
+    out.push('dup=' + (doRegister('test@a.com', '123456', '123456') || 'ok'));
+
+    document.title = 'ACC ' + out.join(' | ');
+    if (bootPanel === 'login') openAuth();   // 截图用：跑完闭环停在账户面板
+  }
+
+  // 调试：?ui=probe 量头像里小人的实际布局盒，排查被裁的问题
+  if (/[?&]ui=probe/.test(location.search)) {
+    const box = (elAuthAvatar && elAuthAvatar.offsetParent) ? elAuthAvatar : elMenuAvatar;
+    const fig = box && box.querySelector('.ch-fig');
+    if (fig) {
+      const av = box.getBoundingClientRect();
+      const r = fig.getBoundingClientRect();
+      const parts = [].map.call(fig.children, s => {
+        const b = s.getBoundingClientRect();
+        return s.className.replace('f-', '') + ':' + Math.round(b.top - av.top) + '+' +
+          Math.round(b.height);
+      });
+      document.title = 'PROBE av=' + Math.round(av.width) + 'x' + Math.round(av.height) +
+        ' fig=' + Math.round(r.width) + 'x' + Math.round(r.height) +
+        ' top=' + Math.round(r.top - av.top) + ' | ' + parts.join(' ');
+    }
   }
 
   window.__DBG = () => ({
