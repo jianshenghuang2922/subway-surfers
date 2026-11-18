@@ -1,0 +1,12 @@
+# 录屏参考素材（77MB，不进仓库）
+*.mp4
+
+# 开发过程中的截图
+shot_*.png
+
+# 本地工具与记忆目录
+.workbuddy-ai/
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
