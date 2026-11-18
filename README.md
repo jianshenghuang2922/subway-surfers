@@ -6,7 +6,7 @@
 
 ## 直接下载玩
 
-不想看代码就去 [Releases](../../releases) 下载：
+不想看代码就去 [Releases](https://github.com/jianshenghuang2922/subway-surfers/releases/latest) 下载：
 
 - **`subway-surfers-3d-v1.0.0.html`** —— 单文件版，777 KB，双击即玩，不用解压
 - **`subway-surfers-3d-v1.0.0.zip`** —— 多文件版，解压后双击 `index.html`
