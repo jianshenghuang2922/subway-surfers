@@ -7,6 +7,10 @@ shot_*.png
 # 本地工具与记忆目录
 .workbuddy-ai/
 
+# 本机应用清单（含本地绝对路径）
+.wbapp_*.genie
+.wbapp_*.privacy.json
+
 # 系统垃圾
 .DS_Store
 Thumbs.db
